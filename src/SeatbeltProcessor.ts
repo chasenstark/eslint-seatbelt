@@ -248,7 +248,8 @@ function countRuleIds(messages: Linter.LintMessage[]): Map<RuleId, number> {
   return ruleToErrorCount
 }
 
-function maybeWriteStateUpdate(
+/** @internal exported for testing */
+export function maybeWriteStateUpdate(
   args: SeatbeltArgs,
   stateFile: SeatbeltFile,
   filename: string,
@@ -263,7 +264,13 @@ function maybeWriteStateUpdate(
     stateFile.readSync()
   }
 
-  const ruleToMaxErrorCount = stateFile.getMaxErrors(filename)
+  // Snapshot the pre-update counts. `getMaxErrors` returns the internal Map by
+  // reference; copying it here decouples us from `updateMaxErrors` entirely so
+  // the frozen-mode report below always sees the original max error counts.
+  const preUpdateMaxErrorCount = stateFile.getMaxErrors(filename)
+  const ruleToMaxErrorCount = preUpdateMaxErrorCount
+    ? new Map(preUpdateMaxErrorCount)
+    : undefined
   const { removedRules } = stateFile.updateMaxErrors(
     filename,
     args,

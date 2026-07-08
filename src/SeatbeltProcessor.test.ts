@@ -3,7 +3,7 @@ import assert from "node:assert"
 import type { Linter } from "eslint"
 import { SeatbeltFile } from "./SeatbeltFile"
 import type { SeatbeltArgs } from "./SeatbeltConfig"
-import { transformMessages } from "./SeatbeltProcessor"
+import { maybeWriteStateUpdate, transformMessages } from "./SeatbeltProcessor"
 
 function makeArgs(overrides: Partial<SeatbeltArgs> = {}): SeatbeltArgs {
   return {
@@ -30,7 +30,6 @@ function makeMessage(
     message: `Original: ${ruleId}`,
     line: 1,
     column: 1,
-    nodeType: null as any,
     ...overrides,
   }
 }
@@ -180,6 +179,38 @@ describe("transformMessages", () => {
     )
 
     assert.strictEqual(result.length, 0)
+  })
+
+  test("maybeWriteStateUpdate() frozen reports a fixed error instead of throwing", () => {
+    const seatbeltFile = makeSeatbeltFile({
+      "src/file.ts": { "some-rule": 1 },
+    })
+    // The rule now produces 0 errors: it was fixed while the seatbelt file
+    // still grandfathers 1 error. In frozen mode this must produce the
+    // "regenerate the seatbelt file" message, not throw.
+    const ruleToErrorCount = new Map<string, number>()
+
+    let result: Linter.LintMessage[] | undefined
+    assert.doesNotThrow(() => {
+      result = maybeWriteStateUpdate(
+        makeArgs({ frozen: true }),
+        seatbeltFile,
+        "src/file.ts",
+        ruleToErrorCount,
+      )
+    })
+
+    assert.ok(result)
+    assert.strictEqual(result.length, 1)
+    assert.strictEqual(result[0].ruleId, "some-rule")
+    assert.strictEqual(result[0].severity, 2)
+    assert.ok(result[0].message.includes("SEATBELT_FROZEN"))
+    // Frozen mode must not mutate the in-memory state.
+    assert.strictEqual(seatbeltFile.changed, false)
+    assert.strictEqual(
+      seatbeltFile.getMaxErrors("src/file.ts")?.get("some-rule"),
+      1,
+    )
   })
 
   test("transformMessages() quiet passes through non-seatbelt messages unchanged", () => {

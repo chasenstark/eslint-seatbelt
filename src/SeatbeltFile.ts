@@ -214,8 +214,14 @@ export class SeatbeltFile {
     let decreasedRulesCount = 0
     this.getMaxErrors(filename)
     const relativeFilename = this.toRelativePath(filename)
-    const maxErrors =
-      this.data.get(relativeFilename)?.maxErrors ?? new Map<RuleId, number>()
+    // Work on a COPY of the file's maxErrors map. `getMaxErrors` returns the
+    // real internal Map by reference, so mutating it here (the increase /
+    // decrease / remove loops below) would corrupt state that callers still
+    // read. In frozen mode we must not mutate in-memory state at all, and the
+    // caller relies on reading the pre-update counts back out of getMaxErrors()
+    // to build its "regenerate the seatbelt file" report.
+    const existing = this.data.get(relativeFilename)?.maxErrors
+    const maxErrors = new Map<RuleId, number>(existing)
 
     ruleToErrorCount.forEach((errorCount, ruleId) => {
       const maxErrorCount = maxErrors.get(ruleId) ?? 0
@@ -416,5 +422,8 @@ function parseMaxErrors(lines: SeatbeltFileLine[]): Map<RuleId, number> {
  * @returns The POSIX-style path using forward slashes
  */
 export function toPosixPath(filePath: string): string {
-  return filePath.split(path.sep).join(path.posix.sep)
+  // Normalize Windows separators to POSIX regardless of the host platform.
+  // Using `path.sep` here would be a no-op on POSIX (where sep is already "/"),
+  // so backslashes in Windows-style paths would leak through.
+  return filePath.split(path.win32.sep).join(path.posix.sep)
 }

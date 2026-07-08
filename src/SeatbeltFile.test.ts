@@ -3,7 +3,7 @@ import assert from "node:assert"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { SeatbeltFile } from "./SeatbeltFile"
+import { SeatbeltFile, toPosixPath } from "./SeatbeltFile"
 import { SeatbeltArgs } from "./SeatbeltConfig"
 
 describe("SeatbeltFile", () => {
@@ -76,6 +76,43 @@ describe("SeatbeltFile", () => {
       undefined,
     )
     assert.strictEqual(maxErrors.get("@typescript-eslint/keep"), 99)
+  })
+
+  test("updateMaxErrors() frozen does not mutate the Map returned by getMaxErrors()", () => {
+    const file = SeatbeltFile.parse(
+      "/test/file.tsv",
+      `"a.ts"\t"some-rule"\t1\n`,
+    )
+
+    const args: SeatbeltArgs = {
+      root: "/test",
+      seatbeltFile: "/test/eslint.seatbelt.tsv",
+      keepRules: new Set(),
+      allowIncreaseRules: new Set(),
+      frozen: true,
+      disable: false,
+      quiet: false,
+      threadsafe: false,
+      verbose: false,
+    }
+
+    const before = file.getMaxErrors("/test/a.ts")
+    assert.ok(before)
+    assert.strictEqual(before.get("some-rule"), 1)
+
+    // The rule now produces 0 errors (it was fixed).
+    const { removedRules } = file.updateMaxErrors(
+      "/test/a.ts",
+      args,
+      new Map(),
+    )
+
+    // The rule is reported as removed...
+    assert.strictEqual(removedRules.has("some-rule"), true)
+    // ...but the shared Map returned by getMaxErrors() is untouched.
+    assert.strictEqual(before.get("some-rule"), 1)
+    // Frozen mode must not mark the file as changed.
+    assert.strictEqual(file.changed, false)
   })
 
   test("readSync() and writeSync() roundtrip", async () => {
