@@ -199,7 +199,7 @@ export function transformMessages(
         // Frozen warnings are always shown, even in quiet mode.
         return messageFrozenUnderMaxErrorCount(
           message,
-          filename,
+          seatbeltFile.filename,
           errorCount,
           maxErrorCount,
         )
@@ -293,7 +293,7 @@ export function maybeWriteStateUpdate(
         line: 1,
         severity: 2,
         message: messageFrozenUnderMaxErrorCountText(
-          filename,
+          stateFile.filename,
           0,
           maxErrorCount,
         ),
@@ -369,7 +369,10 @@ function messageFrozenUnderMaxErrorCountText(
   errorCount: number,
   maxErrorCount: number,
 ) {
-  const fixed = errorCount - maxErrorCount
+  // `errorCount` is below `maxErrorCount` here, so this is how many errors were
+  // fixed (a positive number). Computing it the other way around printed a
+  // nonsensical negative count like "If you fixed -3 errors".
+  const fixed = maxErrorCount - errorCount
   const fixedMessage = fixed === 1 ? "error" : "errors"
   return `
 [${name}]: ${SEATBELT_FROZEN}: Expected ${maxErrorCount} ${pluralErrors(maxErrorCount)}, found ${errorCount}.

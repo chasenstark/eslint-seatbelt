@@ -209,6 +209,11 @@ describe("transformMessages", () => {
     assert.strictEqual(result[0].ruleId, "some-rule")
     assert.strictEqual(result[0].severity, 2)
     assert.ok(result[0].message.includes("SEATBELT_FROZEN"))
+    // Guidance must be sensible: a positive fixed count (not "-1") and a
+    // pointer to the seatbelt file, not the source file.
+    assert.ok(result[0].message.includes("fixed 1 error"))
+    assert.ok(!result[0].message.includes("-1"))
+    assert.ok(result[0].message.includes("eslint.seatbelt.tsv"))
     // Frozen mode must not mutate the in-memory state.
     assert.strictEqual(seatbeltFile.changed, false)
     assert.strictEqual(
@@ -252,24 +257,31 @@ describe("SeatbeltProcessor.postprocess", () => {
     const args = makeArgs({ frozen: true, seatbeltFile: seatbeltFilePath })
     pluginGlobals.pushFileArgs(sourceFile, args)
 
-    // The rule now produces 0 errors: pass an empty section (no lint messages).
-    let result: Linter.LintMessage[] | undefined
-    assert.doesNotThrow(() => {
-      result = SeatbeltProcessor.postprocess!([[]], sourceFile)
-    })
+    try {
+      // The rule now produces 0 errors: pass an empty section (no lint messages).
+      let result: Linter.LintMessage[] | undefined
+      assert.doesNotThrow(() => {
+        result = SeatbeltProcessor.postprocess!([[]], sourceFile)
+      })
 
-    assert.ok(result)
-    assert.strictEqual(result.length, 1)
-    assert.strictEqual(result[0].ruleId, "no-unused-vars")
-    assert.strictEqual(result[0].severity, 2)
-    assert.ok(result[0].message.includes("SEATBELT_FROZEN"))
+      assert.ok(result)
+      assert.strictEqual(result.length, 1)
+      assert.strictEqual(result[0].ruleId, "no-unused-vars")
+      assert.strictEqual(result[0].severity, 2)
+      assert.ok(result[0].message.includes("SEATBELT_FROZEN"))
+      // Guidance points at the seatbelt file (to commit), not the source file,
+      // and reports a positive fixed count.
+      assert.ok(result[0].message.includes("fixed 1 error"))
+      assert.ok(result[0].message.includes("eslint.seatbelt.tsv"))
+      assert.ok(!result[0].message.includes("a.js"))
 
-    // Frozen mode must not have rewritten the state file.
-    assert.strictEqual(
-      fs.readFileSync(seatbeltFilePath, "utf8"),
-      `"a.js"\t"no-unused-vars"\t1\n`,
-    )
-
-    fs.rmSync(tmpDir, { recursive: true, force: true })
+      // Frozen mode must not have rewritten the state file.
+      assert.strictEqual(
+        fs.readFileSync(seatbeltFilePath, "utf8"),
+        `"a.js"\t"no-unused-vars"\t1\n`,
+      )
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    }
   })
 })
