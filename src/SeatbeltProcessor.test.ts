@@ -1,9 +1,13 @@
 import { test, describe } from "node:test"
 import assert from "node:assert"
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
 import type { Linter } from "eslint"
 import { SeatbeltFile } from "./SeatbeltFile"
 import type { SeatbeltArgs } from "./SeatbeltConfig"
-import { maybeWriteStateUpdate, transformMessages } from "./SeatbeltProcessor"
+import { maybeWriteStateUpdate, SeatbeltProcessor, transformMessages } from "./SeatbeltProcessor"
+import * as pluginGlobals from "./pluginGlobals"
 
 function makeArgs(overrides: Partial<SeatbeltArgs> = {}): SeatbeltArgs {
   return {
@@ -230,5 +234,42 @@ describe("transformMessages", () => {
     assert.strictEqual(result.length, 1)
     assert.strictEqual(result[0].severity, 2)
     assert.strictEqual(result[0].message, "Original: some-other-rule")
+  })
+})
+
+describe("SeatbeltProcessor.postprocess", () => {
+  // End-to-end regression for the "bricks the whole run" crash: in frozen mode,
+  // a source file whose recorded rule dropped to zero (error fixed) with a stale
+  // seatbelt entry used to throw out of postprocess. It must instead return the
+  // SEATBELT_FROZEN "regenerate the seatbelt file" message.
+  test("frozen: fixed error with stale entry reports instead of throwing", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "seatbelt-e2e-"))
+    const seatbeltFilePath = path.join(tmpDir, "eslint.seatbelt.tsv")
+    const sourceFile = path.join(tmpDir, "a.js")
+    // Stale entry: still grandfathers 1 error for a rule the file no longer trips.
+    fs.writeFileSync(seatbeltFilePath, `"a.js"\t"no-unused-vars"\t1\n`)
+
+    const args = makeArgs({ frozen: true, seatbeltFile: seatbeltFilePath })
+    pluginGlobals.pushFileArgs(sourceFile, args)
+
+    // The rule now produces 0 errors: pass an empty section (no lint messages).
+    let result: Linter.LintMessage[] | undefined
+    assert.doesNotThrow(() => {
+      result = SeatbeltProcessor.postprocess!([[]], sourceFile)
+    })
+
+    assert.ok(result)
+    assert.strictEqual(result.length, 1)
+    assert.strictEqual(result[0].ruleId, "no-unused-vars")
+    assert.strictEqual(result[0].severity, 2)
+    assert.ok(result[0].message.includes("SEATBELT_FROZEN"))
+
+    // Frozen mode must not have rewritten the state file.
+    assert.strictEqual(
+      fs.readFileSync(seatbeltFilePath, "utf8"),
+      `"a.js"\t"no-unused-vars"\t1\n`,
+    )
+
+    fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 })

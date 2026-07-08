@@ -264,13 +264,12 @@ export function maybeWriteStateUpdate(
     stateFile.readSync()
   }
 
-  // Snapshot the pre-update counts. `getMaxErrors` returns the internal Map by
-  // reference; copying it here decouples us from `updateMaxErrors` entirely so
-  // the frozen-mode report below always sees the original max error counts.
-  const preUpdateMaxErrorCount = stateFile.getMaxErrors(filename)
-  const ruleToMaxErrorCount = preUpdateMaxErrorCount
-    ? new Map(preUpdateMaxErrorCount)
-    : undefined
+  // `getMaxErrors` returns the file's internal Map by reference. That's safe to
+  // hold across the `updateMaxErrors` call below because `updateMaxErrors` now
+  // operates on a copy and never mutates this Map, so it still reflects the
+  // pre-update counts that the frozen-mode report reads. The non-mutation
+  // invariant is locked by SeatbeltFile.test.ts.
+  const ruleToMaxErrorCount = stateFile.getMaxErrors(filename)
   const { removedRules } = stateFile.updateMaxErrors(
     filename,
     args,
